@@ -96,7 +96,6 @@
     
     <div class="input-group">
       <label id="targetLabel">🔒 相手に言わせたいNGワード（ミッション）:</label>
-      <!-- 入力内容が見えるように type="text" に変更 -->
       <input type="text" id="targetWordInput" placeholder="例: エラー" />
     </div>
     <button onclick="sendTargetWord()">決定して待機</button>
@@ -105,7 +104,6 @@
   <!-- ゲーム画面 -->
   <div id="gameScreen" class="screen">
     <div id="gameTheme" class="theme-box"></div>
-    <!-- 自分が設定したNGワードが表示されるエリア -->
     <div id="missionDisplay" class="mission-box"></div>
     <div id="turnDisplay" style="margin-bottom: 8px; color: #a6e3a1; font-weight: bold;"></div>
 
@@ -123,11 +121,8 @@
   let myRole = ""; // "A" または "B"
   let mySetTargetWord = ""; // 自分が設定した秘密のワード
 
-  // サーバーのアドレス（ローカル用 / デプロイ先のURLを指定）
-  // Renderにデプロイした後は、'wss://your-app-name.onrender.com' に書き換えます
-  const SERVER_URL = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
-    ? "ws://localhost:8765"
-    : "wss://" + window.location.host; 
+  // Render上のWebSocketサーバーに直接接続するURLを指定
+  const SERVER_URL = "wss://spychat-jmvf.onrender.com";
 
   function connectWebSocket() {
     ws = new WebSocket(SERVER_URL);
@@ -153,7 +148,6 @@
 
         document.getElementById("gameTheme").innerText = `🎯 作戦テーマ: 【${data.theme}】`;
         
-        // 自分が相手に言わせたい「設定済みNGワード」を画面上にくっきり表示
         document.getElementById("missionDisplay").innerHTML = `🎯 <b>あなたのミッション</b><br>相手に「<span style="color:#d20f39; font-size:1.1em;">${mySetTargetWord}</span>」と言わせろ！`;
         document.getElementById("turnDisplay").innerText = `現在のターン: エージェントA`;
       } 
@@ -187,7 +181,7 @@
       alert("NGワードを入力してください！");
       return;
     }
-    mySetTargetWord = word; // 自分が入力したワードを保存
+    mySetTargetWord = word;
 
     ws.send(JSON.stringify({
       action: "SET_TARGET",
