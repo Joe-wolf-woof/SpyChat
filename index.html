@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>スパイチャット (Webアプリ版)</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #1e1e2e;
+      color: #cdd6f4;
+      display: flex;
+      justify-content: center;
+      padding: 20px;
+    }
+    .chat-container {
+      width: 480px;
+      background: #181825;
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    }
+    .screen { display: none; }
+    .screen.active { display: block; }
+    
+    .theme-box {
+      background: #89b4fa;
+      color: #11111b;
+      font-weight: bold;
+      padding: 10px;
+      border-radius: 6px;
+      margin-bottom: 12px;
+      text-align: center;
+    }
+    .mission-box {
+      background: #f38ba8;
+      color: #11111b;
+      font-weight: bold;
+      padding: 10px 14px;
+      border-radius: 6px;
+      margin-bottom: 8px;
+      border: 2px solid #f38ba8;
+    }
+    .chat-log {
+      height: 250px;
+      overflow-y: auto;
+      border: 1px solid #313244;
+      border-radius: 6px;
+      padding: 10px;
+      background: #11111b;
+      margin-bottom: 12px;
+    }
+    .message { margin-bottom: 8px; }
+    .message.A { color: #89b4fa; }
+    .message.B { color: #fab387; }
+    
+    .input-group {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    input[type="text"] {
+      padding: 10px;
+      border-radius: 6px;
+      border: 1px solid #313244;
+      background: #313244;
+      color: #fff;
+      font-size: 14px;
+    }
+    button {
+      padding: 10px 16px;
+      border: none;
+      border-radius: 6px;
+      background: #a6e3a1;
+      color: #11111b;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    button:disabled { background: #585b70; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+
+<div class="chat-container">
+  <!-- 待機画面 -->
+  <div id="waitScreen" class="screen active">
+    <h2>🕵️‍♂️ スパイチャット接続中...</h2>
+    <p id="connectionStatus">サーバーに接続しています...</p>
+  </div>
+
+  <!-- 設定画面 -->
+  <div id="setupScreen" class="screen">
+    <h2>🎯 秘密のNGワード設定</h2>
+    <div id="setupTheme" class="theme-box"></div>
+    <p id="roleInfo" style="font-weight: bold; color: #a6e3a1;"></p>
+    
+    <div class="input-group">
+      <label id="targetLabel">🔒 相手に言わせたいNGワード（ミッション）:</label>
+      <!-- 入力内容が見えるように type="text" に変更 -->
+      <input type="text" id="targetWordInput" placeholder="例: エラー" />
+    </div>
+    <button onclick="sendTargetWord()">決定して待機</button>
+  </div>
+
+  <!-- ゲーム画面 -->
+  <div id="gameScreen" class="screen">
+    <div id="gameTheme" class="theme-box"></div>
+    <!-- 自分が設定したNGワードが表示されるエリア -->
+    <div id="missionDisplay" class="mission-box"></div>
+    <div id="turnDisplay" style="margin-bottom: 8px; color: #a6e3a1; font-weight: bold;"></div>
+
+    <div id="chatLog" class="chat-log"></div>
+
+    <div style="display: flex; gap: 8px;">
+      <input type="text" id="messageInput" placeholder="暗号（メッセージ）を入力..." style="flex:1;" />
+      <button id="sendBtn" onclick="sendMessage()">送信</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  let ws = null;
+  let myRole = ""; // "A" または "B"
+  let mySetTargetWord = ""; // 自分が設定した秘密のワード
+
+  // サーバーのアドレス（ローカル用 / デプロイ先のURLを指定）
+  // Renderにデプロイした後は、'wss://your-app-name.onrender.com' に書き換えます
+  const SERVER_URL = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
+    ? "ws://localhost:8765"
+    : "wss://" + window.location.host; 
+
+  function connectWebSocket() {
+    ws = new WebSocket(SERVER_URL);
+
+    ws.onopen = () => {
+      document.getElementById("connectionStatus").innerText = "サーバーに接続しました。エージェントの割り当てを待っています...";
+    };
+
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+
+      if (data.type === "ASSIGN_ROLE") {
+        myRole = data.role;
+        document.getElementById("waitScreen").classList.remove("active");
+        document.getElementById("setupScreen").classList.add("active");
+        
+        document.getElementById("setupTheme").innerText = `作戦テーマ: 【${data.theme}】`;
+        document.getElementById("roleInfo").innerText = `あなたは 【エージェント ${myRole}】 です。`;
+      } 
+      else if (data.type === "GAME_START") {
+        document.getElementById("setupScreen").classList.remove("active");
+        document.getElementById("gameScreen").classList.add("active");
+
+        document.getElementById("gameTheme").innerText = `🎯 作戦テーマ: 【${data.theme}】`;
+        
+        // 自分が相手に言わせたい「設定済みNGワード」を画面上にくっきり表示
+        document.getElementById("missionDisplay").innerHTML = `🎯 <b>あなたのミッション</b><br>相手に「<span style="color:#d20f39; font-size:1.1em;">${mySetTargetWord}</span>」と言わせろ！`;
+        document.getElementById("turnDisplay").innerText = `現在のターン: エージェントA`;
+      } 
+      else if (data.type === "NEW_MESSAGE") {
+        const chatLog = document.getElementById("chatLog");
+        const msgDiv = document.createElement("div");
+        msgDiv.className = `message ${data.sender}`;
+        msgDiv.innerText = `エージェント${data.sender}: ${data.text}`;
+        chatLog.appendChild(msgDiv);
+        chatLog.scrollTop = chatLog.scrollHeight;
+
+        document.getElementById("turnDisplay").innerText = `現在のターン: エージェント${data.nextTurn}`;
+
+        // 勝敗判定
+        if (data.isWin) {
+          alert(`🎉 ミッション完了！\n\n勝者: エージェント${data.winner}！\nターゲットワード「${mySetTargetWord}」の誘導に成功しました！`);
+          document.getElementById("sendBtn").disabled = true;
+          document.getElementById("messageInput").disabled = true;
+        }
+      }
+    };
+
+    ws.onclose = () => {
+      alert("サーバーとの通信が切断されました。");
+    };
+  }
+
+  function sendTargetWord() {
+    const word = document.getElementById("targetWordInput").value.trim();
+    if (!word) {
+      alert("NGワードを入力してください！");
+      return;
+    }
+    mySetTargetWord = word; // 自分が入力したワードを保存
+
+    ws.send(JSON.stringify({
+      action: "SET_TARGET",
+      player: myRole,
+      word: word
+    }));
+
+    document.getElementById("setupScreen").innerHTML = `<h2>⏳ 相手エージェントの入力を待っています...</h2><p>仕掛けたトラップ: <b>${mySetTargetWord}</b></p>`;
+  }
+
+  function sendMessage() {
+    const input = document.getElementById("messageInput");
+    const text = input.value.trim();
+    if (!text) return;
+
+    ws.send(JSON.stringify({
+      action: "SEND_MESSAGE",
+      sender: myRole,
+      text: text
+    }));
+
+    input.value = "";
+  }
+
+  document.getElementById("messageInput").addEventListener("keypress", function(e) {
+    if (e.key === "Enter") sendMessage();
+  });
+
+  connectWebSocket();
+</script>
+
+</body>
+</html>
