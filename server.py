@@ -4,10 +4,8 @@ import os
 import random
 import websockets
 
-# 接続中のクライアントリスト
 connected_clients = []
 
-# 多様な作戦テーマの候補リスト
 THEME_LIST = [
     "プログラミング・IT技術",
     "学校・学生生活",
@@ -21,12 +19,13 @@ THEME_LIST = [
     "映画・ドラマ"
 ]
 
-# ゲームの状態管理
 game_state = {
     "theme": "",
     "targetForA": "",  # BがAに設定したワード
     "targetForB": "",  # AがBに設定したワード
-    "turn": "A"
+    "turn": "A",
+    "guessesA": 2,     # Aの残り解読チャンス
+    "guessesB": 2      # Bの残り解読チャンス
 }
 
 async def handler(websocket):
@@ -37,14 +36,14 @@ async def handler(websocket):
     connected_clients.append(websocket)
     player_id = "A" if len(connected_clients) == 1 else "B"
     
-    # 1人目のプレイヤー（A）が接続したタイミングで、新しいテーマをランダムに決定！
     if player_id == "A":
         game_state["theme"] = random.choice(THEME_LIST)
         game_state["targetForA"] = ""
         game_state["targetForB"] = ""
         game_state["turn"] = "A"
+        game_state["guessesA"] = 2
+        game_state["guessesB"] = 2
 
-    # 役割の割り当て通知（選ばれたテーマを送信）
     await websocket.send(json.dumps({
         "type": "ASSIGN_ROLE",
         "role": player_id,
@@ -56,16 +55,14 @@ async def handler(websocket):
             data = json.loads(message)
             action = data.get("action")
 
-            # NGワード設定
             if action == "SET_TARGET":
                 player = data.get("player")
                 word = data.get("word")
                 if player == "A":
-                    game_state["targetForB"] = word  # AがBのターゲットを設定
+                    game_state["targetForB"] = word
                 else:
-                    game_state["targetForA"] = word  # BがAのターゲットを設定
+                    game_state["targetForA"] = word
 
-                # 両者の設定が完了したらゲーム開始
                 if game_state["targetForA"] and game_state["targetForB"]:
                     start_msg = json.dumps({
                         "type": "GAME_START",
@@ -76,25 +73,56 @@ async def handler(websocket):
                     for client in connected_clients:
                         await client.send(start_msg)
 
-            # チャットメッセージ受信
             elif action == "SEND_MESSAGE":
                 sender = data.get("sender")
                 text = data.get("text")
                 
-                # 勝敗判定（相手が仕掛けたターゲットを踏んだか）
-                hit_target = game_state["targetForA"] if sender == "A" else game_state["targetForB"]
-                is_win = hit_target in text
-
-                # ターン交代
                 game_state["turn"] = "B" if sender == "A" else "A"
 
                 response = json.dumps({
                     "type": "NEW_MESSAGE",
                     "sender": sender,
                     "text": text,
-                    "isWin": is_win,
-                    "winner": sender if is_win else None,
                     "nextTurn": game_state["turn"]
+                })
+                for client in connected_clients:
+                    await client.send(response)
+
+            elif action == "GUESS_WORD":
+                sender = data.get("sender")
+                guessed_word = data.get("word", "").strip()
+                
+                target_word = game_state["targetForB"] if sender == "A" else game_state["targetForA"]
+                is_correct = (guessed_word == target_word)
+
+                # 残り回数を減らす
+                if sender == "A":
+                    game_state["guessesA"] -= 1
+                    remaining = game_state["guessesA"]
+                else:
+                    game_state["guessesB"] -= 1
+                    remaining = game_state["guessesB"]
+
+                winner = None
+                is_game_over = False
+
+                if is_correct:
+                    winner = sender
+                    is_game_over = True
+                elif remaining <= 0:
+                    # チャンスを使い切って不正解なら、相手の勝利（自滅敗北）
+                    winner = "B" if sender == "A" else "A"
+                    is_game_over = True
+
+                response = json.dumps({
+                    "type": "GUESS_RESULT",
+                    "sender": sender,
+                    "guessedWord": guessed_word,
+                    "isCorrect": is_correct,
+                    "remainingGuesses": remaining,
+                    "isGameOver": is_game_over,
+                    "winner": winner,
+                    "targetWord": target_word if is_game_over else None
                 })
                 for client in connected_clients:
                     await client.send(response)
@@ -104,7 +132,6 @@ async def handler(websocket):
     finally:
         if websocket in connected_clients:
             connected_clients.remove(websocket)
-            # 全員退出したらテーマをリセット
             if len(connected_clients) == 0:
                 game_state["theme"] = ""
                 game_state["targetForA"] = ""

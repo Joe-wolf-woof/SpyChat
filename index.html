@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>スパイチャット</title>
+  <title>スパイチャット (Webアプリ版)</title>
   <style>
     body {
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -41,7 +41,7 @@
       border: 2px solid #f38ba8;
     }
     .chat-log {
-      height: 250px;
+      height: 180px;
       overflow-y: auto;
       border: 1px solid #313244;
       border-radius: 6px;
@@ -52,6 +52,7 @@
     .message { margin-bottom: 8px; }
     .message.A { color: #89b4fa; }
     .message.B { color: #fab387; }
+    .system-message { color: #f9e2af; font-style: italic; margin-bottom: 8px; }
     
     .input-group {
       display: flex;
@@ -77,6 +78,12 @@
       cursor: pointer;
     }
     button:disabled { background: #585b70; cursor: not-allowed; }
+    .decode-section {
+      background: #313244;
+      padding: 10px;
+      border-radius: 6px;
+      margin-top: 10px;
+    }
   </style>
 </head>
 <body>
@@ -109,19 +116,32 @@
 
     <div id="chatLog" class="chat-log"></div>
 
-    <div style="display: flex; gap: 8px;">
+    <!-- チャット送信エリア -->
+    <div style="display: flex; gap: 8px; margin-bottom: 8px;">
       <input type="text" id="messageInput" placeholder="暗号（メッセージ）を入力..." style="flex:1;" />
       <button id="sendBtn" onclick="sendMessage()">送信</button>
+    </div>
+
+    <!-- 暗号解読（指摘）エリア -->
+    <div class="decode-section">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+        <span style="font-size: 0.9em; font-weight: bold; color: #f38ba8;">🔑 相手のNGワードを見破った！</span>
+        <span id="guessCountDisplay" style="font-size: 0.85em; color: #f9e2af; font-weight: bold;">残りチャンス: 2回</span>
+      </div>
+      <div style="display: flex; gap: 8px;">
+        <input type="text" id="guessWordInput" placeholder="相手のNGワードを入力..." style="flex:1;" />
+        <button id="guessBtn" onclick="guessWord()" style="background: #f38ba8; color: #11111b;">暗号を解読した！</button>
+      </div>
     </div>
   </div>
 </div>
 
 <script>
   let ws = null;
-  let myRole = ""; // "A" または "B"
-  let mySetTargetWord = ""; // 自分が設定した秘密のワード
+  let myRole = ""; 
+  let mySetTargetWord = ""; 
+  let remainingGuesses = 2;
 
-  // Render上のWebSocketサーバーに直接接続するURLを指定
   const SERVER_URL = "wss://spychat-jmvf.onrender.com";
 
   function connectWebSocket() {
@@ -147,7 +167,6 @@
         document.getElementById("gameScreen").classList.add("active");
 
         document.getElementById("gameTheme").innerText = `🎯 作戦テーマ: 【${data.theme}】`;
-        
         document.getElementById("missionDisplay").innerHTML = `🎯 <b>あなたのミッション</b><br>相手に「<span style="color:#d20f39; font-size:1.1em;">${mySetTargetWord}</span>」と言わせろ！`;
         document.getElementById("turnDisplay").innerText = `現在のターン: エージェントA`;
       } 
@@ -160,12 +179,46 @@
         chatLog.scrollTop = chatLog.scrollHeight;
 
         document.getElementById("turnDisplay").innerText = `現在のターン: エージェント${data.nextTurn}`;
+      }
+      else if (data.type === "GUESS_RESULT") {
+        const chatLog = document.getElementById("chatLog");
+        const sysDiv = document.createElement("div");
+        sysDiv.className = "system-message";
 
-        // 勝敗判定
-        if (data.isWin) {
-          alert(`🎉 ミッション完了！\n\n勝者: エージェント${data.winner}！\nターゲットワード「${mySetTargetWord}」の誘導に成功しました！`);
+        // もし自分が推測した結果なら、自分の残り回数カウンターを更新
+        if (data.sender === myRole) {
+          remainingGuesses = data.remainingGuesses;
+          document.getElementById("guessCountDisplay").innerText = `残りチャンス: ${remainingGuesses}回`;
+          
+          if (remainingGuesses <= 0) {
+            document.getElementById("guessBtn").disabled = true;
+            document.getElementById("guessWordInput").disabled = true;
+          }
+        }
+
+        if (data.isGameOver) {
+          if (data.isCorrect) {
+            sysDiv.innerText = `🎉 【暗号解読成功！】エージェント${data.sender} が正解のワード「${data.targetWord}」を見破りました！`;
+            chatLog.appendChild(sysDiv);
+            chatLog.scrollTop = chatLog.scrollHeight;
+
+            alert(`🎉 ミッション成功！\n\n勝者: エージェント${data.winner}！\n暗号「${data.targetWord}」の解読に成功しました！`);
+          } else {
+            sysDiv.innerText = `💀 【ゲームオーバー】エージェント${data.sender} が解読チャンスをすべて使い切って自滅しました！`;
+            chatLog.appendChild(sysDiv);
+            chatLog.scrollTop = chatLog.scrollHeight;
+
+            alert(`💀 ゲームオーバー！\n\n解読チャンスを使い果たしました。\n勝者: エージェント${data.winner}！`);
+          }
+
           document.getElementById("sendBtn").disabled = true;
           document.getElementById("messageInput").disabled = true;
+          document.getElementById("guessBtn").disabled = true;
+          document.getElementById("guessWordInput").disabled = true;
+        } else {
+          sysDiv.innerText = `❌ 【暗号解読失敗】エージェント${data.sender} の推理（「${data.guessedWord}」）は不正解でした。（残りチャンス: ${data.sender === myRole ? remainingGuesses : '相手'}回）`;
+          chatLog.appendChild(sysDiv);
+          chatLog.scrollTop = chatLog.scrollHeight;
         }
       }
     };
@@ -206,8 +259,34 @@
     input.value = "";
   }
 
+  function guessWord() {
+    if (remainingGuesses <= 0) {
+      alert("解読チャンスはすでに使い切っています！");
+      return;
+    }
+
+    const input = document.getElementById("guessWordInput");
+    const word = input.value.trim();
+    if (!word) {
+      alert("解読するワードを入力してください！");
+      return;
+    }
+
+    ws.send(JSON.stringify({
+      action: "GUESS_WORD",
+      sender: myRole,
+      word: word
+    }));
+
+    input.value = "";
+  }
+
   document.getElementById("messageInput").addEventListener("keypress", function(e) {
     if (e.key === "Enter") sendMessage();
+  });
+
+  document.getElementById("guessWordInput").addEventListener("keypress", function(e) {
+    if (e.key === "Enter") guessWord();
   });
 
   connectWebSocket();
