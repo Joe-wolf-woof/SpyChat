@@ -2,18 +2,26 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>スパイチャット (Webアプリ版)</title>
   <style>
+    * {
+      box-sizing: border-box;
+    }
     body {
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
       background: #1e1e2e;
       color: #cdd6f4;
       display: flex;
       justify-content: center;
-      padding: 20px;
+      align-items: center;
+      min-height: 100vh;
+      margin: 0;
+      padding: 12px;
     }
     .chat-container {
-      width: 480px;
+      width: 100%;
+      max-width: 480px;
       background: #181825;
       border-radius: 12px;
       padding: 16px;
@@ -30,6 +38,7 @@
       border-radius: 6px;
       margin-bottom: 12px;
       text-align: center;
+      font-size: 0.95em;
     }
     .mission-box {
       background: #f38ba8;
@@ -39,20 +48,22 @@
       border-radius: 6px;
       margin-bottom: 8px;
       border: 2px solid #f38ba8;
+      font-size: 0.95em;
     }
     .chat-log {
-      height: 180px;
+      height: 220px;
       overflow-y: auto;
       border: 1px solid #313244;
       border-radius: 6px;
       padding: 10px;
       background: #11111b;
       margin-bottom: 12px;
+      font-size: 0.95em;
     }
-    .message { margin-bottom: 8px; }
+    .message { margin-bottom: 8px; word-break: break-all; }
     .message.A { color: #89b4fa; }
     .message.B { color: #fab387; }
-    .system-message { color: #f9e2af; font-style: italic; margin-bottom: 8px; }
+    .system-message { color: #f9e2af; font-style: italic; margin-bottom: 8px; font-size: 0.9em; }
     
     .input-group {
       display: flex;
@@ -61,28 +72,45 @@
       margin-bottom: 12px;
     }
     input[type="text"] {
-      padding: 10px;
+      width: 100%;
+      padding: 12px;
       border-radius: 6px;
       border: 1px solid #313244;
       background: #313244;
       color: #fff;
-      font-size: 14px;
+      font-size: 16px; /* スマホで自動ズームされるのを防ぐため16px以上を推奨 */
     }
     button {
-      padding: 10px 16px;
+      padding: 12px 16px;
       border: none;
       border-radius: 6px;
       background: #a6e3a1;
       color: #11111b;
       font-weight: bold;
       cursor: pointer;
+      font-size: 1em;
     }
     button:disabled { background: #585b70; cursor: not-allowed; }
+    
     .decode-section {
       background: #313244;
       padding: 10px;
       border-radius: 6px;
       margin-top: 10px;
+    }
+
+    /* スマホ向けの微調整 */
+    @media (max-width: 480px) {
+      body {
+        padding: 4px;
+      }
+      .chat-container {
+        padding: 12px;
+        border-radius: 8px;
+      }
+      .chat-log {
+        height: 180px;
+      }
     }
   </style>
 </head>
@@ -105,32 +133,32 @@
       <label id="targetLabel">🔒 相手に言わせたいNGワード（ミッション）:</label>
       <input type="text" id="targetWordInput" placeholder="例: エラー" />
     </div>
-    <button onclick="sendTargetWord()">決定して待機</button>
+    <button onclick="sendTargetWord()" style="width: 100%;">決定して待機</button>
   </div>
 
   <!-- ゲーム画面 -->
   <div id="gameScreen" class="screen">
     <div id="gameTheme" class="theme-box"></div>
     <div id="missionDisplay" class="mission-box"></div>
-    <div id="turnDisplay" style="margin-bottom: 8px; color: #a6e3a1; font-weight: bold;"></div>
+    <div id="turnDisplay" style="margin-bottom: 8px; color: #a6e3a1; font-weight: bold; font-size: 0.9em;"></div>
 
     <div id="chatLog" class="chat-log"></div>
 
     <!-- チャット送信エリア -->
     <div style="display: flex; gap: 8px; margin-bottom: 8px;">
-      <input type="text" id="messageInput" placeholder="暗号（メッセージ）を入力..." style="flex:1;" />
+      <input type="text" id="messageInput" placeholder="メッセージを入力..." style="flex:1;" />
       <button id="sendBtn" onclick="sendMessage()">送信</button>
     </div>
 
     <!-- 暗号解読（指摘）エリア -->
     <div class="decode-section">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-        <span style="font-size: 0.9em; font-weight: bold; color: #f38ba8;">🔑 相手のNGワードを見破った！</span>
-        <span id="guessCountDisplay" style="font-size: 0.85em; color: #f9e2af; font-weight: bold;">残りチャンス: 2回</span>
+        <span style="font-size: 0.85em; font-weight: bold; color: #f38ba8;">🔑 相手のNGワードを見破った！</span>
+        <span id="guessCountDisplay" style="font-size: 0.8em; color: #f9e2af; font-weight: bold;">残りチャンス: 2回</span>
       </div>
       <div style="display: flex; gap: 8px;">
-        <input type="text" id="guessWordInput" placeholder="相手のNGワードを入力..." style="flex:1;" />
-        <button id="guessBtn" onclick="guessWord()" style="background: #f38ba8; color: #11111b;">暗号を解読した！</button>
+        <input type="text" id="guessWordInput" placeholder="NGワードを入力..." style="flex:1;" />
+        <button id="guessBtn" onclick="guessWord()" style="background: #f38ba8; color: #11111b; white-space: nowrap;">解読！</button>
       </div>
     </div>
   </div>
@@ -185,7 +213,6 @@
         const sysDiv = document.createElement("div");
         sysDiv.className = "system-message";
 
-        // もし自分が推測した結果なら、自分の残り回数カウンターを更新
         if (data.sender === myRole) {
           remainingGuesses = data.remainingGuesses;
           document.getElementById("guessCountDisplay").innerText = `残りチャンス: ${remainingGuesses}回`;
