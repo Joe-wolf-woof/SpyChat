@@ -1,14 +1,29 @@
 import asyncio
 import json
 import os
+import random
 import websockets
 
 # 接続中のクライアントリスト
 connected_clients = []
 
+# 多様な作戦テーマの候補リスト
+THEME_LIST = [
+    "プログラミング・IT技術",
+    "学校・学生生活",
+    "食べ物・グルメ",
+    "アニメ・ゲーム",
+    "ビジネス・オフィス",
+    "日常のライフハック",
+    "旅行・お出かけ",
+    "動物・生き物",
+    "スポーツ・筋トレ",
+    "映画・ドラマ"
+]
+
 # ゲームの状態管理
 game_state = {
-    "theme": "プログラミング・IT技術",
+    "theme": "",
     "targetForA": "",  # BがAに設定したワード
     "targetForB": "",  # AがBに設定したワード
     "turn": "A"
@@ -22,7 +37,14 @@ async def handler(websocket):
     connected_clients.append(websocket)
     player_id = "A" if len(connected_clients) == 1 else "B"
     
-    # 役割の割り当て通知
+    # 1人目のプレイヤー（A）が接続したタイミングで、新しいテーマをランダムに決定！
+    if player_id == "A":
+        game_state["theme"] = random.choice(THEME_LIST)
+        game_state["targetForA"] = ""
+        game_state["targetForB"] = ""
+        game_state["turn"] = "A"
+
+    # 役割の割り当て通知（選ばれたテーマを送信）
     await websocket.send(json.dumps({
         "type": "ASSIGN_ROLE",
         "role": player_id,
@@ -82,9 +104,13 @@ async def handler(websocket):
     finally:
         if websocket in connected_clients:
             connected_clients.remove(websocket)
+            # 全員退出したらテーマをリセット
+            if len(connected_clients) == 0:
+                game_state["theme"] = ""
+                game_state["targetForA"] = ""
+                game_state["targetForB"] = ""
 
 async def main():
-    # クラウド環境（Render等）から割り当てられるPORT番号を取得（ローカル時は8765）
     port = int(os.environ.get("PORT", 8765))
     async with websockets.serve(handler, "0.0.0.0", port):
         print(f"🚀 スパイチャットサーバー起動中 (Port: {port})")
